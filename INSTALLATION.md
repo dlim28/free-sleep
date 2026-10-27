@@ -196,6 +196,13 @@ nmcli connection reload
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/throwaway31265/free-sleep/main/scripts/install.sh)"
 ```
 
+- Running the same command again on a Pod that already has Free Sleep is safe: the current installation is kept at `/home/dac/free-sleep-backup` until the new one installs, migrates, and stays running, and it is restored automatically if anything fails. Settings, schedules, and biometrics data are kept.
+- To install from a fork or branch (for example, to test changes), set both variables and fetch the installer from the same place:
+```
+FREE_SLEEP_REPO=<github-user>/free-sleep FREE_SLEEP_BRANCH=<branch> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/<github-user>/free-sleep/<branch>/scripts/install.sh)"
+```
+  Updates started from the web app always use `throwaway31265/free-sleep` `main`. To update from a fork or branch, run `FREE_SLEEP_REPO=<github-user>/free-sleep FREE_SLEEP_BRANCH=<branch> sh /home/dac/free-sleep/scripts/update.sh`.
+
 ---
 
 
@@ -253,18 +260,47 @@ http://192.168.1.50:3000/
 7. If it's not working, reach out in Discord and share the output of `fs-debug`
 
 ## 18. Add an ssh config
-- This will ask for a public key, ssh access is on port 8822 (ex: `ssh root@<POD_IP> -p 8822')
-- This allows you to set up remote access to your Pod
+- This will ask for a public key, ssh access is on port 8822 (ex: `ssh root@<POD_IP> -p 8822`)
+- This allows you to set up remote root access to your Pod (root login and password authentication stay enabled, as before)
+- The new `/etc/ssh/sshd_config` is checked with `sshd -t` first; if it is invalid, the existing config is kept. The default `/etc/ssh/authorized_keys` is removed.
+- Older versions of this script also copied the server config over `/etc/ssh/ssh_config` (the client config), which breaks `ssh`/`scp` commands run *from* the Pod (incoming SSH was not affected). Re-running the script repairs that file when it recognizes the copy, saving the damaged file as `/etc/ssh/ssh_config.server-copy.bak.<date>`. A client config with your own settings is left unchanged.
+- Keep your current SSH session open until a new `ssh root@<POD_IP> -p 8822` session succeeds.
 ```
 sh /home/dac/free-sleep/scripts/setup_ssh.sh
 ```
 
 ## 19. Add firewall rules to block access to the internet (optional, but recommended)
 ```
+# Block internet access (also applied after every reboot)
 sh /home/dac/free-sleep/scripts/block_internet_access.sh
 
-# You can undo this with 
+# Also block Sentry error reporting (remembered until you run ALLOW_SENTRY=true ...)
+ALLOW_SENTRY=false sh /home/dac/free-sleep/scripts/block_internet_access.sh
+
+# Temporary unblock until the next reboot or until you re-apply your setting
 sh /home/dac/free-sleep/scripts/unblock_internet_access.sh
+sh /home/dac/free-sleep/scripts/block_internet_access.sh --restore-prior-state
+
+# Keep internet access unblocked, including after reboots and updates
+sh /home/dac/free-sleep/scripts/unblock_internet_access.sh --persistent
+```
+- Blocking applies immediately, including to connections that were already open (the previous rules let existing connections continue).
+- Still allowed: your local network (including SSH on port 8822 and the web app on port 3000), loopback, DHCP, NTP time sync, DNS to the Pod's configured DNS servers, IPv6 local addresses and neighbor/router discovery, and Sentry unless `ALLOW_SENTRY=false`.
+- Free Sleep only manages its own chains (`FREE_SLEEP_IN`/`FREE_SLEEP_OUT`, and `FREE_SLEEP_IN6`/`FREE_SLEEP_OUT6` for IPv6). Your other filter and NAT rules are not flushed. Rules left by older versions of this script are removed automatically.
+- Your choice (blocked/unblocked and Sentry) is saved in `/persistent/free-sleep-data/firewall_config.env`. Updates and biometrics setup unblock temporarily for downloads and then restore that choice. If you have never chosen, they block afterwards, as they always have.
+- DNS servers are read from `/etc/resolv.conf`, `resolvectl`, and `nmcli` when the rules are applied. If your router or DNS servers change, run the block command again. To pin specific DNS servers, list one IP per line in `/persistent/free-sleep-data/dns_servers.txt`. If no DNS server can be found, DNS is allowed to any server so time sync keeps working.
+
+### Update safety and recovery
+- Updates (`fs-update` or the web app) stop Free Sleep, take a verified database backup at `/persistent/free-sleep-data/free-sleep-copy.db`, and keep the current installation at `/home/dac/free-sleep-backup`.
+- An update is refused, with nothing changed, if there isn't enough free space for the download and a separate copy of the server dependencies.
+- Database migrations run with `prisma migrate deploy`, which never prompts or resets data. If the download, dependencies, migration, or the post-start check of the server fails, the previous installation and database are restored and restarted automatically.
+- If the restore itself fails, the update exits with status 3, leaves Free Sleep stopped, and prints the manual recovery steps. After a power loss during an update, recover manually with:
+```
+rm -rf /home/dac/free-sleep && mv /home/dac/free-sleep-backup /home/dac/free-sleep
+cp /persistent/free-sleep-data/free-sleep-copy.db /persistent/free-sleep-data/free-sleep.db
+rm -f /persistent/free-sleep-data/free-sleep.db-wal /persistent/free-sleep-data/free-sleep.db-shm
+chown dac:dac /persistent/free-sleep-data/free-sleep.db
+systemctl enable free-sleep && systemctl start free-sleep
 ```
 
 

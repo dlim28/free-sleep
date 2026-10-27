@@ -29,4 +29,10 @@ if [ -f /persistent/free-sleep-data/free-sleep.db ]; then
     /persistent/free-sleep-data/free-sleep-copy.db --checkpoint
 fi
 
-sh /home/dac/free-sleep/scripts/update.sh
+update_status=0
+sh /home/dac/free-sleep/scripts/update.sh || update_status=$?
+if [ "$update_status" -eq 3 ]; then
+  # update.sh could not restore a matching code/database pair; keep the services stopped.
+  services_to_restore=""
+fi
+exit "$update_status"

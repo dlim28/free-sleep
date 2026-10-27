@@ -17,7 +17,7 @@ if [[ "$confirm" =~ ^[Yy]$ ]]; then
         /persistent/free-sleep-data/free-sleep.db-journal \
         /persistent/free-sleep-data/free-sleep.db
 
-  su - dac -c "cd /home/dac/free-sleep/server && /home/dac/.volta/bin/npm run migrate deploy && exit"
+  su - dac -c "cd /home/dac/free-sleep/server && /home/dac/.volta/bin/npm run migrate:deploy && exit"
 
   systemctl start free-sleep free-sleep-stream
 else
