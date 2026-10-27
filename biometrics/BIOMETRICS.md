@@ -14,12 +14,12 @@ local NATS server. Legacy RAW-file reading works without that package. A missing
 client on a NATS Pod reports a dependency repair instruction.
 
 For installations already failing with `ModuleNotFoundError: No module named 'nats'`,
-this can be repaired over SSH before updating. The exit trap restores the usual
-Free Sleep internet block even if installation fails:
+this can be repaired over SSH before updating. The exit trap restores your saved
+Free Sleep firewall preference even if installation fails:
 
 ```sh
 sudo bash -e -c '
-  trap "sh /home/dac/free-sleep/scripts/block_internet_access.sh" EXIT
+  trap "sh /home/dac/free-sleep/scripts/block_internet_access.sh --restore-prior-state" EXIT
   sh /home/dac/free-sleep/scripts/unblock_internet_access.sh
   /home/dac/venv/bin/python -m pip install nats-py
   systemctl reset-failed free-sleep-stream.service
